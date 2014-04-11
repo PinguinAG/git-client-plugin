@@ -207,22 +207,43 @@ public interface GitClient {
 
     /**
      * Fetch a remote repository. Assumes <tt>remote.remoteName.url</tt> has been set.
+     * @deprecated use {@link #fetch_()} and configure a {@link org.jenkinsci.plugins.gitclient.FetchCommand}
      */
     void fetch(URIish url, List<RefSpec> refspecs) throws GitException, InterruptedException;
 
+    /**
+     * @deprecated use {@link #fetch_()} and configure a {@link org.jenkinsci.plugins.gitclient.FetchCommand}
+     */
     void fetch(String remoteName, RefSpec... refspec) throws GitException, InterruptedException;
 
+    /**
+     * @deprecated use {@link #fetch_()} and configure a {@link org.jenkinsci.plugins.gitclient.FetchCommand}
+     */
     void fetch(String remoteName, RefSpec refspec) throws GitException, InterruptedException;
 
     FetchCommand fetch_(); // can't use 'fetch' as legacy IGitAPI already define this method
 
+    /**
+     * @deprecated use {@link #push()} and configure a {@link org.jenkinsci.plugins.gitclient.PushCommand}
+     */
     void push(String remoteName, String refspec) throws GitException, InterruptedException;
 
+    /**
+     * @deprecated use {@link #push()} and configure a {@link org.jenkinsci.plugins.gitclient.PushCommand}
+     */
     void push(URIish url, String refspec) throws GitException, InterruptedException;
 
+    PushCommand push();
+
+
+    /**
+     * @deprecated use {@link #merge()} and configure a {@link org.jenkinsci.plugins.gitclient.MergeCommand}
+     */
     void merge(ObjectId rev) throws GitException, InterruptedException;
 
     MergeCommand merge();
+
+    InitCommand init_(); // can't use 'init' as legacy IGitAPI already define this method
 
     /**
      * Prune stale remote tracking branches with "git remote prune" on the specified remote.
@@ -312,9 +333,36 @@ public interface GitClient {
      */
     void addSubmodule(String remoteURL, String subdir) throws GitException, InterruptedException;
 
+    /**
+     * Run submodule update optionally recursively on all submodules
+     * (equivalent of <tt>git submodule update <em>--recursive</em></tt>.)
+     * @deprecated use {@link #submoduleUpdate()} and {@link SubmoduleUpdateCommand}
+     */
     void submoduleUpdate(boolean recursive)  throws GitException, InterruptedException;
 
-    void submoduleUpdate(boolean recursive, String reference)  throws GitException, InterruptedException;
+    /**
+     * Run submodule update optionally recursively on all submodules, with a specific
+     * reference passed to git clone if needing to --init.
+     * (equivalent of <tt>git submodule update <em>--recursive</em> <em>--reference 'reference'</em></tt>.)
+     * @deprecated use {@link #submoduleUpdate()} and {@link SubmoduleUpdateCommand}
+     */
+    void submoduleUpdate(boolean recursive, String reference) throws GitException, InterruptedException;
+
+    /**
+     * Run submodule update optionally recursively on all submodules, optionally with remoteTracking submodules
+     * (equivalent of <tt>git submodule update <em>--recursive</em> <em>--remote</em></tt>.)
+     * @deprecated use {@link #submoduleUpdate()} and {@link SubmoduleUpdateCommand}
+     */
+    void submoduleUpdate(boolean recursive, boolean remoteTracking)  throws GitException, InterruptedException;
+    /**
+     * Run submodule update optionally recursively on all submodules, optionally with remoteTracking, with a specific
+     * reference passed to git clone if needing to --init.
+     * (equivalent of <tt>git submodule update <em>--recursive</em> <em>--remote</em> <em>--reference 'reference'</em></tt>.)
+     * @deprecated use {@link #submoduleUpdate()} and {@link SubmoduleUpdateCommand}
+     */
+    void submoduleUpdate(boolean recursive, boolean remoteTracking, String reference)  throws GitException, InterruptedException;
+
+    SubmoduleUpdateCommand submoduleUpdate();
 
     void submoduleClean(boolean recursive)  throws GitException, InterruptedException;
 

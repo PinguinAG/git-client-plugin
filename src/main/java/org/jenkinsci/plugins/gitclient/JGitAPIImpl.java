@@ -81,7 +81,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-import static java.util.Arrays.copyOfRange;
 import static org.apache.commons.lang.StringUtils.*;
 import static org.eclipse.jgit.api.ResetCommand.ResetType.*;
 import static org.eclipse.jgit.lib.Constants.*;
@@ -150,9 +149,13 @@ public class JGitAPIImpl extends LegacyCompatibleGitAPIImpl {
         committer = new PersonIdent(name,email);
     }
 
-    public void init() throws GitException {
+    public void init() throws GitException, InterruptedException {
+        init_().workspace(workspace.getAbsolutePath()).execute();
+    }
+
+    private void doInit(String workspace, boolean bare) throws GitException {
         try {
-            Git.init().setDirectory(workspace).call();
+            Git.init().setBare(bare).setDirectory(new File(workspace)).call();
         } catch (GitAPIException e) {
             throw new GitException(e);
         }
@@ -160,6 +163,31 @@ public class JGitAPIImpl extends LegacyCompatibleGitAPIImpl {
 
     public CheckoutCommand checkout() {
         return new CheckoutCommand() {
+
+            public String ref;
+            public String branch;
+            public boolean deleteBranch;
+            public List<String> sparseCheckoutPaths = Collections.emptyList();
+
+            public CheckoutCommand ref(String ref) {
+                this.ref = ref;
+                return this;
+            }
+
+            public CheckoutCommand branch(String branch) {
+                this.branch = branch;
+                return this;
+            }
+
+            public CheckoutCommand deleteBranchIfExist(boolean deleteBranch) {
+                this.deleteBranch = deleteBranch;
+                return this;
+            }
+
+            public CheckoutCommand sparseCheckoutPaths(List<String> sparseCheckoutPaths) {
+                this.sparseCheckoutPaths = sparseCheckoutPaths == null ? Collections.<String>emptyList() : sparseCheckoutPaths;
+                return this;
+            }
 
             public void execute() throws GitException, InterruptedException {
 
@@ -383,6 +411,9 @@ public class JGitAPIImpl extends LegacyCompatibleGitAPIImpl {
         return new org.jenkinsci.plugins.gitclient.FetchCommand() {
             public URIish url;
             public List<RefSpec> refspecs;
+            // JGit 3.3.0 and 3.3.1 prune more branches than expected
+            // Refer to GitAPITestCase.test_fetch_with_prune()
+            // private boolean shouldPrune = false;
 
             public org.jenkinsci.plugins.gitclient.FetchCommand from(URIish remote, List<RefSpec> refspecs) {
                 this.url = remote;
@@ -392,6 +423,8 @@ public class JGitAPIImpl extends LegacyCompatibleGitAPIImpl {
 
             public org.jenkinsci.plugins.gitclient.FetchCommand prune() {
                 throw new UnsupportedOperationException("JGit don't (yet) support pruning during fetch");
+                // shouldPrune = true;
+                // return this;
             }
 
             public org.jenkinsci.plugins.gitclient.FetchCommand shallow(boolean shallow) {
@@ -420,6 +453,7 @@ public class JGitAPIImpl extends LegacyCompatibleGitAPIImpl {
                             if (rs != null)
                                 refSpecs.add(rs);
                     fetch.setRefSpecs(refSpecs);
+                    // fetch.setRemoveDeletedRefs(shouldPrune);
 
                     fetch.call();
                 } catch (GitAPIException e) {
@@ -996,6 +1030,28 @@ public class JGitAPIImpl extends LegacyCompatibleGitAPIImpl {
         };
     }
 
+    public InitCommand init_() {
+        return new InitCommand() {
+
+            public String workspace;
+            public boolean bare;
+
+            public InitCommand workspace(String workspace) {
+                this.workspace = workspace;
+                return this;
+            }
+
+            public InitCommand bare(boolean bare) {
+                this.bare = bare;
+                return this;
+            }
+
+            public void execute() throws GitException, InterruptedException {
+                doInit(workspace, bare);
+            }
+        };
+    }
+
     public void deleteTag(String tagName) throws GitException {
         Repository repo = null;
         try {
@@ -1158,24 +1214,54 @@ public class JGitAPIImpl extends LegacyCompatibleGitAPIImpl {
         return branches;
     }
 
-    public void push(URIish url, String refspec) throws GitException, InterruptedException {
-        throw new UnsupportedOperationException("Not implemented yet");
-    }
+    public PushCommand push() {
+        return new PushCommand() {
+            public URIish remote;
+            public String refspec;
+            public boolean force;
+            // timeout is not yet implemented for push
+            // public Integer timeout;
 
-    public void push(String remoteName, String refspec) throws GitException {
-        RefSpec ref = (refspec != null) ? new RefSpec(refspec) : Transport.REFSPEC_PUSH_ALL;
-        Repository repo = null;
-        try {
-            repo = getRepository();
-            git(repo).push().setRemote(remoteName).setRefSpecs(ref)
-                    .setProgressMonitor(new JGitProgressMonitor(listener))
-                    .setCredentialsProvider(getProvider())
-                    .call();
-        } catch (GitAPIException e) {
-            throw new GitException(e);
-        } finally {
-            if (repo != null) repo.close();
-        }
+            public PushCommand to(URIish remote) {
+                this.remote = remote;
+                return this;
+            }
+
+            public PushCommand ref(String refspec) {
+                this.refspec = refspec;
+                return this;
+            }
+
+            public PushCommand force() {
+                this.force = true;
+                return this;
+            }
+
+            public PushCommand timeout(Integer timeout) {
+                throw new UnsupportedOperationException("Not implemented yet");
+            }
+
+            public void execute() throws GitException, InterruptedException {
+                RefSpec ref = (refspec != null) ? new RefSpec(refspec) : Transport.REFSPEC_PUSH_ALL;
+                Repository repo = null;
+                try {
+                    repo = getRepository();
+                    Git g = git(repo);
+                    Config config = g.getRepository().getConfig();
+                    config.setString("remote", "org_jenkinsci_plugins_gitclient_JGitAPIImpl", "url", remote.toPrivateASCIIString());
+                    g.push().setRemote("org_jenkinsci_plugins_gitclient_JGitAPIImpl").setRefSpecs(ref)
+                            .setProgressMonitor(new JGitProgressMonitor(listener))
+                            .setCredentialsProvider(getProvider())
+                            .setForce(force)
+                            .call();
+                    config.unset("remote", "org_jenkinsci_plugins_gitclient_JGitAPIImpl", "url");
+                } catch (GitAPIException e) {
+                    throw new GitException(e);
+                } finally {
+                    if (repo != null) repo.close();
+                }
+            }
+        };
     }
 
     public List<ObjectId> revListAll() throws GitException {
@@ -1308,27 +1394,56 @@ public class JGitAPIImpl extends LegacyCompatibleGitAPIImpl {
         }
     }
 
-    public void submoduleUpdate(boolean recursive) throws GitException {
-        Repository repo = null;
-        try {
-            repo = getRepository();
-            git(repo).submoduleUpdate().call();
-            if (recursive) {
-                for (JGitAPIImpl sub : submodules()) {
-                    sub.submoduleUpdate(recursive);
+    public SubmoduleUpdateCommand submoduleUpdate() {
+        return new SubmoduleUpdateCommand() {
+            boolean recursive      = false;
+            boolean remoteTracking = false;
+            String  ref            = null;
+
+            public SubmoduleUpdateCommand recursive(boolean recursive) {
+                this.recursive = recursive;
+                return this;
+            }
+
+            public SubmoduleUpdateCommand remoteTracking(boolean remoteTracking) {
+                this.remoteTracking = remoteTracking;
+                return this;
+            }
+
+            public SubmoduleUpdateCommand ref(String ref) {
+                this.ref = ref;
+                return this;
+            }
+
+            public void execute() throws GitException, InterruptedException {
+                Repository repo = null;
+
+                if (remoteTracking) {
+                    listener.getLogger().println("[ERROR] JGit doesn't support remoteTracking submodules yet.");
+                    throw new UnsupportedOperationException("not implemented yet");
+                }
+                if ((ref != null) && !ref.isEmpty()) {
+                    listener.getLogger().println("[ERROR] JGit doesn't support submodule update --reference yet.");
+                    throw new UnsupportedOperationException("not implemented yet");
+                }
+                    
+                try {
+                    repo = getRepository();
+                    git(repo).submoduleUpdate().call();
+                    if (recursive) {
+                        for (JGitAPIImpl sub : submodules()) {
+                            sub.submoduleUpdate(recursive);
+                        }
+                    }
+                } catch (IOException e) {
+                    throw new GitException(e);
+                } catch (GitAPIException e) {
+                    throw new GitException(e);
+                } finally {
+                    if (repo != null) repo.close();
                 }
             }
-        } catch (IOException e) {
-            throw new GitException(e);
-        } catch (GitAPIException e) {
-            throw new GitException(e);
-        } finally {
-            if (repo != null) repo.close();
-        }
-    }
-
-    public void submoduleUpdate(boolean recursive, String reference) throws GitException {
-        throw new UnsupportedOperationException("not implemented yet");
+        };
     }
 
 
